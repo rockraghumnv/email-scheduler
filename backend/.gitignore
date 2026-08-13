@@ -1,0 +1,12 @@
+node_modules
+dist
+# Keep environment variables out of version control
+.env
+
+/generated/prisma
+
+# Agent skill packs (auto-installed tool caches, not app source)
+/.agents
+/.claude
+/.windsurf
+/skills-lock.json
