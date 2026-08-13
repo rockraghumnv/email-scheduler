@@ -22,5 +22,86 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  senders   Sender[]
+  campaigns Campaign[]
+
   @@map("users")
+}
+
+model Sender {
+  id          String   @id @default(uuid())
+  userId      String
+  email       String
+  displayName String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaigns Campaign[]
+
+  @@unique([userId, email])
+  @@map("senders")
+}
+
+// Kept intentionally small: "draft" exists for future flows that create a
+// campaign before recipients/timing are finalized. This stage's create API
+// always has full recipient + schedule data up front, so it goes straight
+// to "scheduled".
+enum CampaignStatus {
+  draft
+  scheduled
+  completed
+  cancelled
+}
+
+enum EmailStatus {
+  scheduled
+  processing
+  sent
+  failed
+}
+
+model Campaign {
+  id           String         @id @default(uuid())
+  userId       String
+  senderId     String
+  subject      String
+  body         String
+  startTime    DateTime
+  delaySeconds Int
+  hourlyLimit  Int
+  status       CampaignStatus @default(draft)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sender Sender  @relation(fields: [senderId], references: [id], onDelete: Restrict)
+  emails Email[]
+
+  @@index([userId])
+  @@index([senderId])
+  @@index([status])
+  @@map("campaigns")
+}
+
+model Email {
+  id            String      @id @default(uuid())
+  campaignId    String
+  recipient     String
+  scheduledAt   DateTime
+  status        EmailStatus @default(scheduled)
+  sentAt        DateTime?
+  failedAt      DateTime?
+  failureReason String?
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  campaign Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  // (campaignId, recipient) is unique and also serves as the lookup index for
+  // campaignId-scoped queries; a separate single-column index would be redundant.
+  @@unique([campaignId, recipient])
+  @@index([status])
+  @@index([scheduledAt])
+  @@map("emails")
 }

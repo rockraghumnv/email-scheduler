@@ -20,6 +20,12 @@ export class ConflictError extends HttpError {
   }
 }
 
+export class NotFoundError extends HttpError {
+  constructor(message = "Resource not found") {
+    super(404, message);
+  }
+}
+
 export class TooManyRequestsError extends HttpError {
   constructor(message = "Too many attempts, please try again later") {
     super(429, message);

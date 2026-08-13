@@ -17,6 +17,11 @@ const envSchema = z.object({
   SESSION_SECRET: z.string().min(16, "SESSION_SECRET must be at least 16 characters"),
 
   FRONTEND_URL: z.string().url().default("http://localhost:5173"),
+
+  // Campaign-creation input bounds for this stage; actual send-rate throttling
+  // is enforced later by the BullMQ worker layer, not here.
+  MIN_EMAIL_DELAY: z.coerce.number().int().min(0).default(1),
+  MAX_EMAILS_PER_HOUR: z.coerce.number().int().positive().default(500),
 });
 
 const parsed = envSchema.safeParse(process.env);
