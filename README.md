@@ -1,5 +1,7 @@
 # Email Scheduler
 
+LiveURL : http://4.240.106.62.sslip.io/login
+
 A full-stack service for scheduling and sending bulk email campaigns, with delayed delivery, per-sender rate limiting, and retry handling. Built with React + TypeScript on the frontend and Express + TypeScript, PostgreSQL/Prisma, and BullMQ/Redis on the backend, sending through Ethereal SMTP for development/testing.
 
 ## Architecture
