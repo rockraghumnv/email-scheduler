@@ -197,4 +197,4 @@ All endpoints except register/login/Google routes require an authenticated sessi
 * **Limits:** Delay and hourly limit are campaign-level UI settings, while env values define system boundaries/defaults.
 * **Ethereal:** Nodemailer uses a programmatically created Ethereal test account; credentials are stored in `.env`.
 * **Rate limiting:** When the hourly limit is reached, jobs are delayed to the next available hour instead of being dropped.
-* **Idempotency:** Each email has a unique/deterministic job ID and its status is checked before sending. If SMTP accepts the email and the worker crashes before recording `sent` in PostgreSQL, exactly-once delivery cannot be guaranteed with ordinary SMTP.
+* **Idempotency:** Each email has a unique/deterministic job ID and its status is checked before sending. If SMTP accepts the email and the worker crashes before recording `sent` in PostgreSQL, exactly-once delivery cannot be guaranteed with ordinary SMTP.(the mail server should maintain idempotency key orelse our worker weill send the mail twice)
