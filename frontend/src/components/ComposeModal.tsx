@@ -1,37 +1,22 @@
-import { useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import axios from "axios";
-import { X } from "lucide-react";
+import { useDropzone } from "react-dropzone";
+import { UploadCloud, X } from "lucide-react";
 import { toast } from "sonner";
 import { senderApi } from "../services/sender.api";
 import { campaignApi } from "../services/campaign.api";
+import { SCHEDULED_EMAILS_QUERY_KEY, SENDERS_QUERY_KEY } from "../lib/queryKeys";
+import { getErrorMessage } from "../utils/errors";
+import { extractEmailsFromCsv, parseRecipients, splitRecipientText } from "../utils/recipients";
 
 interface ComposeModalProps {
   onClose: () => void;
 }
 
-function parseRecipients(raw: string): string[] {
-  return Array.from(
-    new Set(
-      raw
-        .split(/[\s,]+/)
-        .map((email) => email.trim().toLowerCase())
-        .filter((email) => email.length > 0),
-    ),
-  );
-}
-
-function extractErrorMessage(error: unknown): string {
-  if (axios.isAxiosError<{ error?: string }>(error) && error.response?.data.error) {
-    return error.response.data.error;
-  }
-  return "Unable to schedule campaign. Please try again.";
-}
-
 export default function ComposeModal({ onClose }: ComposeModalProps) {
   const queryClient = useQueryClient();
   const { data: senders, isPending: sendersLoading } = useQuery({
-    queryKey: ["senders"],
+    queryKey: SENDERS_QUERY_KEY,
     queryFn: senderApi.list,
   });
 
@@ -43,26 +28,55 @@ export default function ComposeModal({ onClose }: ComposeModalProps) {
   const [delaySeconds, setDelaySeconds] = useState(2);
   const [hourlyLimit, setHourlyLimit] = useState(200);
 
+  const recipientSummary = useMemo(
+    () => parseRecipients(splitRecipientText(recipientsText)),
+    [recipientsText],
+  );
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    accept: { "text/csv": [".csv"], "text/plain": [".txt"] },
+    multiple: false,
+    onDrop: (acceptedFiles) => {
+      const file = acceptedFiles[0];
+      if (!file) {
+        return;
+      }
+      void file.text().then((text) => {
+        const candidates = extractEmailsFromCsv(text);
+        const result = parseRecipients(candidates);
+        if (result.valid.length === 0) {
+          toast.error("No valid email addresses found in that file.");
+          return;
+        }
+        setRecipientsText(result.valid.join("\n"));
+        const parts = [`${result.valid.length} recipient${result.valid.length === 1 ? "" : "s"} imported`];
+        if (result.invalidCount > 0) parts.push(`${result.invalidCount} invalid removed`);
+        if (result.duplicateCount > 0) parts.push(`${result.duplicateCount} duplicate${result.duplicateCount === 1 ? "" : "s"} removed`);
+        toast.success(parts.join(" · "));
+      });
+    },
+  });
+
   const createMutation = useMutation({
     mutationFn: campaignApi.create,
     onSuccess: (result) => {
       toast.success(
         `Campaign scheduled for ${result.totalRecipients} recipient${result.totalRecipients === 1 ? "" : "s"}`,
       );
-      queryClient.invalidateQueries({ queryKey: ["campaigns"] });
+      queryClient.invalidateQueries({ queryKey: SCHEDULED_EMAILS_QUERY_KEY });
       onClose();
     },
     onError: (error) => {
-      toast.error(extractErrorMessage(error));
+      toast.error(getErrorMessage(error, "Unable to schedule campaign. Please try again."));
     },
   });
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
 
-    const recipients = parseRecipients(recipientsText);
+    const recipients = recipientSummary.valid;
     if (recipients.length === 0) {
-      toast.error("Add at least one recipient.");
+      toast.error("Add at least one valid recipient.");
       return;
     }
     if (!startTime) {
@@ -140,6 +154,17 @@ export default function ComposeModal({ onClose }: ComposeModalProps) {
             className="w-full rounded-lg bg-neutral-100 px-4 py-3 text-sm text-neutral-800 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-green-500"
           />
 
+          <div
+            {...getRootProps()}
+            className={`flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed px-4 py-3 text-center text-xs transition ${
+              isDragActive ? "border-green-500 bg-green-50 text-green-700" : "border-neutral-200 text-neutral-400 hover:border-neutral-300"
+            }`}
+          >
+            <input {...getInputProps()} />
+            <UploadCloud className="h-5 w-5" />
+            <span>{isDragActive ? "Drop the file here" : "Drag & drop a CSV/TXT of leads, or click to upload"}</span>
+          </div>
+
           <textarea
             required
             value={recipientsText}
@@ -148,6 +173,12 @@ export default function ComposeModal({ onClose }: ComposeModalProps) {
             rows={3}
             className="w-full rounded-lg bg-neutral-100 px-4 py-3 text-sm text-neutral-800 placeholder:text-neutral-400 focus:outline-none focus:ring-2 focus:ring-green-500"
           />
+          <p className="text-xs text-neutral-400">
+            {recipientSummary.valid.length} valid recipient{recipientSummary.valid.length === 1 ? "" : "s"}
+            {recipientSummary.invalidCount > 0 && ` · ${recipientSummary.invalidCount} invalid ignored`}
+            {recipientSummary.duplicateCount > 0 &&
+              ` · ${recipientSummary.duplicateCount} duplicate${recipientSummary.duplicateCount === 1 ? "" : "s"} removed`}
+          </p>
 
           <div className="grid grid-cols-2 gap-3">
             <label className="text-xs text-neutral-500">

@@ -1,10 +1,10 @@
 import { useState, type FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
-import axios from "axios";
 import { toast } from "sonner";
 import { authApi } from "../services/auth.api";
-import { AUTH_QUERY_KEY } from "../hooks/useAuth";
+import { AUTH_QUERY_KEY } from "../lib/queryKeys";
+import { getErrorMessage } from "../utils/errors";
 
 type Mode = "login" | "register";
 
@@ -29,13 +29,6 @@ function GoogleIcon() {
       />
     </svg>
   );
-}
-
-function extractErrorMessage(error: unknown, mode: Mode): string {
-  if (axios.isAxiosError<{ error?: string }>(error) && error.response?.data.error) {
-    return error.response.data.error;
-  }
-  return mode === "login" ? "Unable to log in. Please try again." : "Unable to create account. Please try again.";
 }
 
 export default function Login() {
@@ -63,7 +56,8 @@ export default function Login() {
       await queryClient.invalidateQueries({ queryKey: AUTH_QUERY_KEY });
       navigate("/dashboard", { replace: true });
     } catch (error) {
-      toast.error(extractErrorMessage(error, mode));
+      const fallback = mode === "login" ? "Unable to log in. Please try again." : "Unable to create account. Please try again.";
+      toast.error(getErrorMessage(error, fallback));
     } finally {
       setIsSubmitting(false);
     }
