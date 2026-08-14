@@ -4,7 +4,8 @@ import type { AddressInfo } from "node:net";
 import { after, before, describe, test } from "node:test";
 import { createApp } from "../src/app.js";
 import { prisma } from "../src/lib/prisma.js";
-import { redisClient } from "../src/lib/redis.js";
+import { ioredisConnection, redisClient } from "../src/lib/redis.js";
+import { closeEmailQueue } from "../src/queue/email.queue.js";
 
 let baseUrl: string;
 let server: ReturnType<ReturnType<typeof createApp>["listen"]>;
@@ -36,6 +37,8 @@ async function registerUser(prefix: string): Promise<AuthedUser> {
 
 before(async () => {
   await redisClient.connect();
+  // ioredisConnection is not connected here — BullMQ's Queue (constructed
+  // when app.js imports the queue module) manages that connection itself.
   const app = createApp();
   server = app.listen(0);
   await new Promise<void>((resolve) => server.once("listening", resolve));
@@ -46,8 +49,12 @@ before(async () => {
 after(async () => {
   await prisma.user.deleteMany({ where: { id: { in: createdUserIds } } });
   await new Promise<void>((resolve, reject) => server.close((err) => (err ? reject(err) : resolve())));
+  await closeEmailQueue();
   await prisma.$disconnect();
   await redisClient.quit();
+  if (ioredisConnection.status !== "end") {
+    ioredisConnection.disconnect();
+  }
 });
 
 describe("GET /api/senders", () => {

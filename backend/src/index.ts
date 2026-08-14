@@ -4,6 +4,10 @@ import { redisClient } from "./lib/redis.js";
 
 async function main() {
   await redisClient.connect();
+  // ioredisConnection (BullMQ) is intentionally not connected here: BullMQ's
+  // Queue manages a lazyConnect connection's lifecycle itself once
+  // constructed (see src/queue/email.queue.ts), and calling .connect() on it
+  // ourselves races that and throws "already connecting/connected".
 
   const app = createApp();
 

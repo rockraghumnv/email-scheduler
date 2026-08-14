@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { CampaignStatus, EmailStatus } from "../../generated/prisma/client.js";
 import { prisma } from "../lib/prisma.js";
-import { NotFoundError } from "../utils/errors.js";
+import { scheduleCampaignEmails } from "./scheduler.service.js";
+import { HttpError, NotFoundError } from "../utils/errors.js";
 
 export interface CreateCampaignInput {
   userId: string;
@@ -48,6 +49,10 @@ export async function createCampaign(input: CreateCampaignInput): Promise<Create
     status: EmailStatus.scheduled,
   }));
 
+  // PostgreSQL is the source of truth and must commit before anything is
+  // queued — a job referencing an email that doesn't exist is worse than a
+  // committed email that isn't queued yet (the latter is retryable via
+  // scheduleCampaignEmails, using the same deterministic job ids).
   await prisma.$transaction(async (tx) => {
     await tx.campaign.create({
       data: {
@@ -65,6 +70,23 @@ export async function createCampaign(input: CreateCampaignInput): Promise<Create
 
     await tx.email.createMany({ data: emailRows });
   });
+
+  try {
+    await scheduleCampaignEmails(campaignId, emailRows);
+  } catch (err) {
+    // The campaign and its emails are already committed — they are not lost,
+    // and re-calling scheduleCampaignEmails for this campaignId later is
+    // safe (deterministic job ids). What we must not do is respond 201 as if
+    // scheduling succeeded, so this is surfaced as a distinct failure.
+    console.error(
+      `Failed to provision BullMQ jobs for campaign ${campaignId} (${emailRows.length} emails):`,
+      err,
+    );
+    throw new HttpError(
+      502,
+      "Campaign was saved but could not be scheduled. Please retry; your campaign has not been lost.",
+    );
+  }
 
   return {
     campaignId,

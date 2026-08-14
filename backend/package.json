@@ -5,9 +5,11 @@
   "main": "index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "worker": "tsx watch src/queue/email.worker.ts",
     "build": "tsc",
     "start": "node dist/src/index.js",
-    "test": "tsx --test \"tests/**/*.test.ts\""
+    "test": "tsx --test --experimental-test-module-mocks \"tests/**/*.test.ts\"",
+    "smtp:test": "tsx src/scripts/send-test-email.ts"
   },
   "keywords": [],
   "author": "",
