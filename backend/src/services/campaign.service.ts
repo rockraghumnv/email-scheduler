@@ -98,6 +98,7 @@ export async function createCampaign(input: CreateCampaignInput): Promise<Create
 export interface PublicCampaign {
   id: string;
   senderId: string;
+  sender: { id: string; email: string; displayName: string | null };
   subject: string;
   startTime: Date;
   delaySeconds: number;
@@ -106,30 +107,62 @@ export interface PublicCampaign {
   totalRecipients: number;
 }
 
-export async function listCampaignsForUser(userId: string): Promise<PublicCampaign[]> {
-  const campaigns = await prisma.campaign.findMany({
-    where: { userId },
-    orderBy: { createdAt: "desc" },
-    select: {
-      id: true,
-      senderId: true,
-      subject: true,
-      startTime: true,
-      delaySeconds: true,
-      hourlyLimit: true,
-      status: true,
-      _count: { select: { emails: true } },
-    },
-  });
+export interface ListCampaignsParams {
+  userId: string;
+  page: number;
+  limit: number;
+}
 
-  return campaigns.map((campaign) => ({
-    id: campaign.id,
-    senderId: campaign.senderId,
-    subject: campaign.subject,
-    startTime: campaign.startTime,
-    delaySeconds: campaign.delaySeconds,
-    hourlyLimit: campaign.hourlyLimit,
-    status: campaign.status,
-    totalRecipients: campaign._count.emails,
-  }));
+export interface CampaignPagination {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+export async function listCampaignsForUser(
+  params: ListCampaignsParams,
+): Promise<{ campaigns: PublicCampaign[]; pagination: CampaignPagination }> {
+  const where = { userId: params.userId };
+
+  const [campaigns, total] = await Promise.all([
+    prisma.campaign.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip: (params.page - 1) * params.limit,
+      take: params.limit,
+      select: {
+        id: true,
+        senderId: true,
+        subject: true,
+        startTime: true,
+        delaySeconds: true,
+        hourlyLimit: true,
+        status: true,
+        sender: { select: { id: true, email: true, displayName: true } },
+        _count: { select: { emails: true } },
+      },
+    }),
+    prisma.campaign.count({ where }),
+  ]);
+
+  return {
+    campaigns: campaigns.map((campaign) => ({
+      id: campaign.id,
+      senderId: campaign.senderId,
+      sender: campaign.sender,
+      subject: campaign.subject,
+      startTime: campaign.startTime,
+      delaySeconds: campaign.delaySeconds,
+      hourlyLimit: campaign.hourlyLimit,
+      status: campaign.status,
+      totalRecipients: campaign._count.emails,
+    })),
+    pagination: {
+      page: params.page,
+      limit: params.limit,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / params.limit)),
+    },
+  };
 }

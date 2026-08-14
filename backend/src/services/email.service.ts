@@ -128,6 +128,157 @@ export async function markEmailFailed(emailId: string, reason: string): Promise<
   });
 }
 
+export interface PaginationParams {
+  page: number;
+  limit: number;
+}
+
+export interface PaginationResult {
+  page: number;
+  limit: number;
+  total: number;
+  totalPages: number;
+}
+
+function paginate<T extends PaginationParams>(params: T, total: number): PaginationResult {
+  return {
+    page: params.page,
+    limit: params.limit,
+    total,
+    totalPages: Math.max(1, Math.ceil(total / params.limit)),
+  };
+}
+
+export interface PublicScheduledEmail {
+  id: string;
+  campaignId: string;
+  recipient: string;
+  subject: string;
+  scheduledAt: Date;
+  // "processing" is included alongside "scheduled" — a worker actively
+  // claiming the row is still pending from the dashboard's point of view,
+  // not sent/failed yet. Reported as-is rather than collapsed to
+  // "scheduled" so the UI isn't told something false about the row's state.
+  status: "scheduled" | "processing";
+}
+
+export interface ListScheduledEmailsParams extends PaginationParams {
+  userId: string;
+  campaignId?: string | undefined;
+}
+
+// Scoped exclusively through campaign.userId (Email has no userId of its
+// own) — never accept a caller-supplied userId. A campaignId filter is
+// ANDed into the same ownership-scoped where clause, so requesting another
+// user's campaignId yields an empty result rather than leaking its emails.
+export async function listScheduledEmailsForUser(
+  params: ListScheduledEmailsParams,
+): Promise<{ emails: PublicScheduledEmail[]; pagination: PaginationResult }> {
+  const where = {
+    status: { in: [EmailStatus.scheduled, EmailStatus.processing] },
+    campaign: {
+      userId: params.userId,
+      ...(params.campaignId ? { id: params.campaignId } : {}),
+    },
+  };
+
+  const [rows, total] = await Promise.all([
+    prisma.email.findMany({
+      where,
+      orderBy: { scheduledAt: "asc" },
+      skip: (params.page - 1) * params.limit,
+      take: params.limit,
+      select: {
+        id: true,
+        campaignId: true,
+        recipient: true,
+        scheduledAt: true,
+        status: true,
+        campaign: { select: { subject: true } },
+      },
+    }),
+    prisma.email.count({ where }),
+  ]);
+
+  return {
+    emails: rows.map((row) => ({
+      id: row.id,
+      campaignId: row.campaignId,
+      recipient: row.recipient,
+      subject: row.campaign.subject,
+      scheduledAt: row.scheduledAt,
+      status: row.status as "scheduled" | "processing",
+    })),
+    pagination: paginate(params, total),
+  };
+}
+
+export interface PublicSentEmail {
+  id: string;
+  campaignId: string;
+  recipient: string;
+  subject: string;
+  sentAt: Date | null;
+  status: "sent" | "failed";
+  failureReason: string | null;
+}
+
+export interface ListSentEmailsParams extends PaginationParams {
+  userId: string;
+  campaignId?: string | undefined;
+  status?: "sent" | "failed" | undefined;
+}
+
+export async function listSentEmailsForUser(
+  params: ListSentEmailsParams,
+): Promise<{ emails: PublicSentEmail[]; pagination: PaginationResult }> {
+  const statuses = params.status
+    ? [params.status === "sent" ? EmailStatus.sent : EmailStatus.failed]
+    : [EmailStatus.sent, EmailStatus.failed];
+
+  const where = {
+    status: { in: statuses },
+    campaign: {
+      userId: params.userId,
+      ...(params.campaignId ? { id: params.campaignId } : {}),
+    },
+  };
+
+  const [rows, total] = await Promise.all([
+    prisma.email.findMany({
+      where,
+      // Most-recently-resolved first: sentAt for delivered mail, failedAt
+      // for failures — falls back to updatedAt so both interleave sensibly.
+      orderBy: { updatedAt: "desc" },
+      skip: (params.page - 1) * params.limit,
+      take: params.limit,
+      select: {
+        id: true,
+        campaignId: true,
+        recipient: true,
+        sentAt: true,
+        status: true,
+        failureReason: true,
+        campaign: { select: { subject: true } },
+      },
+    }),
+    prisma.email.count({ where }),
+  ]);
+
+  return {
+    emails: rows.map((row) => ({
+      id: row.id,
+      campaignId: row.campaignId,
+      recipient: row.recipient,
+      subject: row.campaign.subject,
+      sentAt: row.sentAt,
+      status: row.status as "sent" | "failed",
+      failureReason: row.failureReason,
+    })),
+    pagination: paginate(params, total),
+  };
+}
+
 export type ProcessEmailResult =
   | { outcome: "sent"; previewUrl: string | false }
   | { outcome: "skipped" }

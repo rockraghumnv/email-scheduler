@@ -273,13 +273,57 @@ describe("GET /api/campaigns", () => {
     assert.equal(res.status, 200);
 
     const body = (await res.json()) as {
-      campaigns: Array<{ id: string; subject: string; senderId: string; totalRecipients: number; status: string }>;
+      campaigns: Array<{
+        id: string;
+        subject: string;
+        senderId: string;
+        sender: { id: string; email: string; displayName: string | null };
+        totalRecipients: number;
+        status: string;
+      }>;
+      pagination: { page: number; limit: number; total: number; totalPages: number };
     };
     assert.equal(body.campaigns.length, 1);
     assert.equal(body.campaigns[0]!.subject, "A's campaign");
     assert.equal(body.campaigns[0]!.senderId, senderA.id);
+    assert.equal(body.campaigns[0]!.sender.id, senderA.id);
+    assert.equal(body.campaigns[0]!.sender.email, "list-a@company.com");
     assert.equal(body.campaigns[0]!.totalRecipients, 3);
     assert.equal(body.campaigns[0]!.status, "scheduled");
+    assert.equal(body.pagination.total, 1);
+  });
+
+  test("pagination: limit and page are respected, and empty state returns an empty array", async () => {
+    const user = await registerUser("list-page");
+    const sender = await createSender(user.userId, "list-page@company.com");
+
+    for (let i = 0; i < 3; i++) {
+      const res = await fetch(`${baseUrl}/api/campaigns`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Cookie: user.cookie },
+        body: JSON.stringify(validCampaignPayload({ senderId: sender.id, subject: `Campaign ${i}` })),
+      });
+      assert.equal(res.status, 201);
+    }
+
+    const page1 = await fetch(`${baseUrl}/api/campaigns?page=1&limit=2`, { headers: { Cookie: user.cookie } });
+    const page1Body = (await page1.json()) as {
+      campaigns: unknown[];
+      pagination: { total: number; totalPages: number };
+    };
+    assert.equal(page1Body.campaigns.length, 2);
+    assert.equal(page1Body.pagination.total, 3);
+    assert.equal(page1Body.pagination.totalPages, 2);
+
+    const page2 = await fetch(`${baseUrl}/api/campaigns?page=2&limit=2`, { headers: { Cookie: user.cookie } });
+    const page2Body = (await page2.json()) as { campaigns: unknown[] };
+    assert.equal(page2Body.campaigns.length, 1);
+
+    const emptyUser = await registerUser("list-page-empty");
+    const emptyRes = await fetch(`${baseUrl}/api/campaigns`, { headers: { Cookie: emptyUser.cookie } });
+    assert.equal(emptyRes.status, 200);
+    const emptyBody = (await emptyRes.json()) as { campaigns: unknown[] };
+    assert.deepEqual(emptyBody.campaigns, []);
   });
 
   test("unauthenticated request is rejected", async () => {

@@ -44,6 +44,11 @@ export const createCampaignHandler: RequestHandler = async (req, res, next) => {
   }
 };
 
+const listCampaignsQuerySchema = z.object({
+  page: z.coerce.number().int().positive().default(1),
+  limit: z.coerce.number().int().positive().max(100).default(50),
+});
+
 export const listCampaigns: RequestHandler = async (req, res, next) => {
   try {
     const userId = req.session.userId;
@@ -51,8 +56,9 @@ export const listCampaigns: RequestHandler = async (req, res, next) => {
       throw new UnauthorizedError();
     }
 
-    const campaigns = await listCampaignsForUser(userId);
-    res.status(200).json({ campaigns });
+    const query = listCampaignsQuerySchema.parse(req.query);
+    const result = await listCampaignsForUser({ userId, ...query });
+    res.status(200).json(result);
   } catch (err) {
     next(err);
   }

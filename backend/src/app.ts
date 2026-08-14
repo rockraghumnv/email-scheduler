@@ -7,6 +7,7 @@ import { env } from "./config/env.js";
 import { redisClient } from "./lib/redis.js";
 import { authRouter } from "./routes/auth.routes.js";
 import { campaignRouter } from "./routes/campaign.routes.js";
+import { emailRouter } from "./routes/email.routes.js";
 import { senderRouter } from "./routes/sender.routes.js";
 import { HttpError } from "./utils/errors.js";
 
@@ -48,6 +49,7 @@ export function createApp() {
   app.use("/api/auth", authRouter);
   app.use("/api/senders", senderRouter);
   app.use("/api/campaigns", campaignRouter);
+  app.use("/api/emails", emailRouter);
 
   app.use((_req, res) => {
     res.status(404).json({ error: "Not found" });
